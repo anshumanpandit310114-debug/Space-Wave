@@ -57,7 +57,8 @@
             <h1>Space Wave</h1>
             <p>Hold left mouse button to fly up.</p>
             <p>Release to drift down at the same speed.</p>
-            <p class="tip">Keep the ship between the waves!</p>
+            <p class="tip">Avoid the obstacles!</p>
+            <p id="status">Score: 0</p>
         </div>
         <canvas id="gameCanvas"></canvas>
     </div>
@@ -86,14 +87,15 @@
             speed: Math.random() * 0.7 + 0.5
         }));
 
-        const waves = [];
-        const waveCount = 6;
-        for (let i = 0; i < waveCount; i++) {
-            waves.push({ offset: i * 70, amplitude: 40 + i * 10, phase: Math.random() * Math.PI * 2, speed: 0.008 + i * 0.002 });
-        }
-
+        const obstacles = [];
+        const obstacleWidth = 24;
+        const obstacleGap = 180;
+        const obstacleSpeed = 3;
+        let spawnTimer = 0;
+        let score = 0;
+        let isGameOver = false;
         let mouseDown = false;
-        
+
         function resize() {
             width = window.innerWidth;
             height = window.innerHeight;
@@ -106,35 +108,46 @@
         window.addEventListener('resize', resize);
 
         canvas.addEventListener('mousedown', (e) => {
-            if (e.button === 0) {
+            if (e.button === 0 && !isGameOver) {
                 mouseDown = true;
                 ship.velocity = -ship.speed;
             }
         });
 
         window.addEventListener('mouseup', (e) => {
-            if (e.button === 0) {
+            if (e.button === 0 && !isGameOver) {
                 mouseDown = false;
                 ship.velocity = ship.speed;
             }
         });
 
         window.addEventListener('mouseleave', () => {
-            mouseDown = false;
-            ship.velocity = ship.speed;
+            if (!isGameOver) {
+                mouseDown = false;
+                ship.velocity = ship.speed;
+            }
         });
 
         window.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            mouseDown = true;
-            ship.velocity = -ship.speed;
+            if (!isGameOver) {
+                mouseDown = true;
+                ship.velocity = -ship.speed;
+            }
         }, { passive: false });
 
         window.addEventListener('touchend', (e) => {
             e.preventDefault();
-            mouseDown = false;
-            ship.velocity = ship.speed;
+            if (!isGameOver) {
+                mouseDown = false;
+                ship.velocity = ship.speed;
+            }
         });
+
+        function spawnObstacle() {
+            const openingY = 80 + Math.random() * (height - 240);
+            obstacles.push({ x: width + 20, top: openingY - obstacleGap / 2, bottom: openingY + obstacleGap / 2 });
+        }
 
         function drawBackground() {
             ctx.clearRect(0, 0, width, height);
@@ -152,24 +165,24 @@
         }
 
         function drawWaves(time) {
-            waves.forEach((wave, index) => {
-                ctx.strokeStyle = 'rgba(135,206,250,' + (0.16 + index * 0.05) + ')';
+            const waveCount = 5;
+            for (let i = 0; i < waveCount; i++) {
+                ctx.strokeStyle = 'rgba(135,206,250,' + (0.12 + i * 0.05) + ')';
                 ctx.lineWidth = 4;
                 ctx.beginPath();
-                for (let x = 0; x <= width; x += 14) {
-                    const y = height * 0.7 + Math.sin((x * 0.012) + wave.phase + time * wave.speed) * wave.amplitude + index * 14;
+                for (let x = 0; x <= width; x += 18) {
+                    const y = height * 0.75 + Math.sin((x * 0.01) + time * (0.008 + i * 0.002) + i) * (50 + i * 10);
                     if (x === 0) ctx.moveTo(x, y);
                     else ctx.lineTo(x, y);
                 }
                 ctx.stroke();
-            });
+            }
         }
 
         function drawShip() {
             ctx.save();
             ctx.translate(ship.x, ship.y);
             ctx.rotate(ship.velocity * 0.08);
-
             ctx.fillStyle = ship.color;
             ctx.beginPath();
             ctx.moveTo(25, 0);
@@ -178,13 +191,58 @@
             ctx.lineTo(-18, 14);
             ctx.closePath();
             ctx.fill();
-
             ctx.fillStyle = 'rgba(255,255,255,0.9)';
             ctx.beginPath();
             ctx.arc(-4, 0, 5, 0, Math.PI * 2);
             ctx.fill();
-
             ctx.restore();
+        }
+
+        function drawObstacles() {
+            ctx.fillStyle = '#ff6b6b';
+            obstacles.forEach(obs => {
+                ctx.fillRect(obs.x, 0, obstacleWidth, obs.top);
+                ctx.fillRect(obs.x, obs.bottom, obstacleWidth, height - obs.bottom);
+            });
+        }
+
+        function updateObstacles() {
+            obstacles.forEach(obs => {
+                obs.x -= obstacleSpeed;
+            });
+            while (obstacles.length && obstacles[0].x < -obstacleWidth) {
+                obstacles.shift();
+                score += 1;
+                document.getElementById('status').textContent = 'Score: ' + score;
+            }
+        }
+
+        function checkCollisions() {
+            if (ship.y - ship.radius < 0 || ship.y + ship.radius > height) {
+                return true;
+            }
+            return obstacles.some(obs => {
+                const closestX = Math.max(obs.x, Math.min(ship.x, obs.x + obstacleWidth));
+                const closestY = Math.max(0, Math.min(ship.y, obs.top));
+                const distTop = Math.hypot(ship.x - closestX, ship.y - closestY);
+                if (distTop < ship.radius) return true;
+                const closestY2 = Math.max(obs.bottom, Math.min(ship.y, height));
+                const distBottom = Math.hypot(ship.x - closestX, ship.y - closestY2);
+                return distBottom < ship.radius;
+            });
+        }
+
+        function gameOver() {
+            isGameOver = true;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+            ctx.fillRect(0, 0, width, height);
+            ctx.fillStyle = '#fff';
+            ctx.font = '48px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Game Over', width / 2, height / 2 - 20);
+            ctx.font = '24px Arial';
+            ctx.fillText('Score: ' + score, width / 2, height / 2 + 30);
+            ctx.fillText('Refresh to play again', width / 2, height / 2 + 70);
         }
 
         function update() {
@@ -192,13 +250,26 @@
             if (!mouseDown && ship.velocity !== ship.speed) {
                 ship.velocity = ship.speed;
             }
-            if (ship.y < 20) ship.y = 20;
-            if (ship.y > height - 20) ship.y = height - 20;
+            if (ship.y < ship.radius) ship.y = ship.radius;
+            if (ship.y > height - ship.radius) ship.y = height - ship.radius;
+
+            spawnTimer += 1;
+            if (spawnTimer > 140) {
+                spawnTimer = 0;
+                spawnObstacle();
+            }
+            updateObstacles();
+
+            if (checkCollisions()) {
+                gameOver();
+            }
         }
 
         function loop(time) {
+            if (isGameOver) return;
             drawBackground();
             drawWaves(time * 0.001);
+            drawObstacles();
             update();
             drawShip();
             requestAnimationFrame(loop);
@@ -209,4 +280,4 @@
     </script>
 </body>
 </html>
-           
+          

@@ -29,9 +29,9 @@
             top: 20px;
             z-index: 10;
             background: rgba(0,0,0,0.5);
-            padding: 12px 16px;
-            border-radius: 12px;
-            border: 1px solid rgba(255,255,255,0.15);
+            padding: 14px 18px;
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.18);
             backdrop-filter: blur(6px);
         }
 
@@ -41,9 +41,9 @@
         }
 
         .ui p {
-            margin: 4px 0;
+            margin: 6px 0;
             font-size: 14px;
-            line-height: 1.4;
+            line-height: 1.45;
         }
 
         .tip {
@@ -88,13 +88,17 @@
         }));
 
         const obstacles = [];
-        const obstacleWidth = 24;
+        const obstacleWidth = 26;
         const obstacleGap = 180;
-        const obstacleSpeed = 3;
+        const obstacleSpeed = 3.5;
         let spawnTimer = 0;
         let score = 0;
         let isGameOver = false;
         let mouseDown = false;
+
+        function clamp(value, min, max) {
+            return Math.max(min, Math.min(max, value));
+        }
 
         function resize() {
             width = window.innerWidth;
@@ -102,7 +106,7 @@
             canvas.width = width;
             canvas.height = height;
             ship.x = width * 0.2;
-            if (ship.y > height - 40) ship.y = height - 40;
+            ship.y = clamp(ship.y, ship.radius, height - ship.radius);
         }
 
         window.addEventListener('resize', resize);
@@ -145,13 +149,18 @@
         });
 
         function spawnObstacle() {
-            const openingY = 80 + Math.random() * (height - 240);
-            obstacles.push({ x: width + 20, top: openingY - obstacleGap / 2, bottom: openingY + obstacleGap / 2 });
+            const openingCenter = 120 + Math.random() * (height - 240);
+            obstacles.push({
+                x: width + 30,
+                topHeight: openingCenter - obstacleGap / 2,
+                bottomY: openingCenter + obstacleGap / 2,
+                passed: false
+            });
         }
 
         function drawBackground() {
             ctx.clearRect(0, 0, width, height);
-            ctx.fillStyle = 'rgba(0, 8, 20, 0.72)';
+            ctx.fillStyle = 'rgba(0, 8, 20, 0.85)';
             ctx.fillRect(0, 0, width, height);
 
             stars.forEach(star => {
@@ -167,11 +176,11 @@
         function drawWaves(time) {
             const waveCount = 5;
             for (let i = 0; i < waveCount; i++) {
-                ctx.strokeStyle = 'rgba(135,206,250,' + (0.12 + i * 0.05) + ')';
+                ctx.strokeStyle = 'rgba(135,206,250,' + (0.1 + i * 0.05) + ')';
                 ctx.lineWidth = 4;
                 ctx.beginPath();
-                for (let x = 0; x <= width; x += 18) {
-                    const y = height * 0.75 + Math.sin((x * 0.01) + time * (0.008 + i * 0.002) + i) * (50 + i * 10);
+                for (let x = 0; x <= width; x += 16) {
+                    const y = height * 0.75 + Math.sin((x * 0.012) + time * (0.008 + i * 0.002) + i) * (50 + i * 12);
                     if (x === 0) ctx.moveTo(x, y);
                     else ctx.lineTo(x, y);
                 }
@@ -199,21 +208,35 @@
         }
 
         function drawObstacles() {
-            ctx.fillStyle = '#ff6b6b';
             obstacles.forEach(obs => {
-                ctx.fillRect(obs.x, 0, obstacleWidth, obs.top);
-                ctx.fillRect(obs.x, obs.bottom, obstacleWidth, height - obs.bottom);
+                ctx.fillStyle = '#ff6b6b';
+                ctx.fillRect(obs.x, 0, obstacleWidth, obs.topHeight);
+                ctx.fillRect(obs.x, obs.bottomY, obstacleWidth, height - obs.bottomY);
+                ctx.fillStyle = '#ffd54f';
+                ctx.fillRect(obs.x - 4, obs.topHeight - 6, obstacleWidth + 8, 6);
+                ctx.fillRect(obs.x - 4, obs.bottomY, obstacleWidth + 8, 6);
             });
+        }
+
+        function rectCircleCollide(rx, ry, rw, rh, cx, cy, cr) {
+            const closestX = clamp(cx, rx, rx + rw);
+            const closestY = clamp(cy, ry, ry + rh);
+            const dx = cx - closestX;
+            const dy = cy - closestY;
+            return dx * dx + dy * dy < cr * cr;
         }
 
         function updateObstacles() {
             obstacles.forEach(obs => {
                 obs.x -= obstacleSpeed;
+                if (!obs.passed && obs.x + obstacleWidth < ship.x) {
+                    obs.passed = true;
+                    score += 1;
+                    document.getElementById('status').textContent = 'Score: ' + score;
+                }
             });
-            while (obstacles.length && obstacles[0].x < -obstacleWidth) {
+            while (obstacles.length && obstacles[0].x < -obstacleWidth - 100) {
                 obstacles.shift();
-                score += 1;
-                document.getElementById('status').textContent = 'Score: ' + score;
             }
         }
 
@@ -222,19 +245,14 @@
                 return true;
             }
             return obstacles.some(obs => {
-                const closestX = Math.max(obs.x, Math.min(ship.x, obs.x + obstacleWidth));
-                const closestY = Math.max(0, Math.min(ship.y, obs.top));
-                const distTop = Math.hypot(ship.x - closestX, ship.y - closestY);
-                if (distTop < ship.radius) return true;
-                const closestY2 = Math.max(obs.bottom, Math.min(ship.y, height));
-                const distBottom = Math.hypot(ship.x - closestX, ship.y - closestY2);
-                return distBottom < ship.radius;
+                return rectCircleCollide(obs.x, 0, obstacleWidth, obs.topHeight, ship.x, ship.y, ship.radius)
+                    || rectCircleCollide(obs.x, obs.bottomY, obstacleWidth, height - obs.bottomY, ship.x, ship.y, ship.radius);
             });
         }
 
         function gameOver() {
             isGameOver = true;
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
             ctx.fillRect(0, 0, width, height);
             ctx.fillStyle = '#fff';
             ctx.font = '48px Arial';
@@ -250,11 +268,10 @@
             if (!mouseDown && ship.velocity !== ship.speed) {
                 ship.velocity = ship.speed;
             }
-            if (ship.y < ship.radius) ship.y = ship.radius;
-            if (ship.y > height - ship.radius) ship.y = height - ship.radius;
+            ship.y = clamp(ship.y, ship.radius, height - ship.radius);
 
             spawnTimer += 1;
-            if (spawnTimer > 140) {
+            if (spawnTimer >= 130) {
                 spawnTimer = 0;
                 spawnObstacle();
             }
@@ -280,4 +297,3 @@
     </script>
 </body>
 </html>
-          

@@ -1,226 +1,212 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Space Waves</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Wave Game</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body, html { width: 100%; height: 100%; overflow: hidden; background: radial-gradient(circle at top, #08122b, #02060f 70%); font-family: Arial, sans-serif; }
-        canvas { display: block; }
-        #ui {
-            position: absolute;
-            top: 16px;
-            left: 16px;
-            color: #d9f4ff;
-            font-size: 16px;
-            text-shadow: 0 0 10px rgba(0,0,0,0.7);
-            z-index: 10;
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: radial-gradient(circle at center, #091b2f 0%, #02060f 60%, #000 100%);
+            color: #fff;
+            font-family: Arial, sans-serif;
         }
-        #ui span { display: block; margin-bottom: 8px; }
-        #message {
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        .ui {
             position: absolute;
-            bottom: 16px;
-            left: 50%;
-            transform: translateX(-50%);
-            color: #8be9fd;
+            left: 20px;
+            top: 20px;
+            z-index: 10;
+            background: rgba(0,0,0,0.5);
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.15);
+            backdrop-filter: blur(6px);
+        }
+
+        .ui h1 {
+            margin: 0 0 8px;
             font-size: 18px;
-            text-align: center;
-            width: calc(100% - 40px);
-            max-width: 600px;
-            text-shadow: 0 0 10px rgba(0,0,0,0.8);
+        }
+
+        .ui p {
+            margin: 4px 0;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .tip {
+            color: #7ecef4;
         }
     </style>
 </head>
 <body>
-    <div id="ui">
-        <span>Space Waves</span>
-        <span>Hold left mouse button to go up</span>
-        <span>Release to fall</span>
-        <span id="score">Score: 0</span>
+    <div id="game-container">
+        <div class="ui">
+            <h1>Space Wave</h1>
+            <p>Hold left mouse button to fly up.</p>
+            <p>Release to drift down at the same speed.</p>
+            <p class="tip">Keep the ship between the waves!</p>
+        </div>
+        <canvas id="gameCanvas"></canvas>
     </div>
-    <div id="message">Click and hold left mouse button to fly!</div>
-    <canvas id="game"></canvas>
+
     <script>
-        const canvas = document.getElementById('game');
+        const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const scoreEl = document.getElementById('score');
-        const msgEl = document.getElementById('message');
         let width = window.innerWidth;
         let height = window.innerHeight;
         canvas.width = width;
         canvas.height = height;
 
         const ship = {
-            x: width * 0.15,
-            y: height * 0.5,
-            radius: 22,
+            x: width * 0.2,
+            y: height / 2,
+            radius: 18,
             velocity: 0,
-            lift: -0.42,
-            gravity: 0.02,
-            maxSpeed: 7,
+            speed: 5,
+            color: '#81d4fa'
         };
+
+        const stars = Array.from({ length: 120 }, () => ({
+            x: Math.random() * width,
+            y: Math.random() * height,
+            size: Math.random() * 2 + 1,
+            speed: Math.random() * 0.7 + 0.5
+        }));
+
+        const waves = [];
+        const waveCount = 6;
+        for (let i = 0; i < waveCount; i++) {
+            waves.push({ offset: i * 70, amplitude: 40 + i * 10, phase: Math.random() * Math.PI * 2, speed: 0.008 + i * 0.002 });
+        }
 
         let mouseDown = false;
-        let obstacles = [];
-        let frame = 0;
-        let score = 0;
-        let gameOver = false;
-
-        const colors = {
-            background: '#02060f',
-            ship: '#76e1ff',
-            trail: '#4bb8ff',
-            obstacle: '#eb6f92',
-            star: '#7df0ff',
-        };
-
+        
         function resize() {
             width = window.innerWidth;
             height = window.innerHeight;
             canvas.width = width;
             canvas.height = height;
-            ship.x = width * 0.15;
-            if (ship.y > height - ship.radius - 20) ship.y = height - ship.radius - 20;
+            ship.x = width * 0.2;
+            if (ship.y > height - 40) ship.y = height - 40;
         }
 
         window.addEventListener('resize', resize);
 
-        window.addEventListener('mousedown', (event) => {
-            if (event.button === 0) {
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 0) {
                 mouseDown = true;
-                msgEl.textContent = 'Keep holding to rise through the space waves!';
+                ship.velocity = -ship.speed;
             }
         });
 
-        window.addEventListener('mouseup', (event) => {
-            if (event.button === 0) {
+        window.addEventListener('mouseup', (e) => {
+            if (e.button === 0) {
                 mouseDown = false;
-                msgEl.textContent = 'Release to descend. Avoid the walls!';
+                ship.velocity = ship.speed;
             }
         });
 
-        window.addEventListener('touchstart', () => { mouseDown = true; msgEl.textContent = 'Touch and hold to rise!'; });
-        window.addEventListener('touchend', () => { mouseDown = false; msgEl.textContent = 'Release to descend.'; });
+        window.addEventListener('mouseleave', () => {
+            mouseDown = false;
+            ship.velocity = ship.speed;
+        });
 
-        function createObstacle() {
-            const gap = 180;
-            const minHeight = 80;
-            const maxHeight = height - gap - minHeight - 80;
-            const topHeight = minHeight + Math.random() * maxHeight;
-            obstacles.push({
-                x: width + 80,
-                topHeight,
-                bottomY: topHeight + gap,
-                width: 72,
-                passed: false,
+        window.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            mouseDown = true;
+            ship.velocity = -ship.speed;
+        }, { passive: false });
+
+        window.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            mouseDown = false;
+            ship.velocity = ship.speed;
+        });
+
+        function drawBackground() {
+            ctx.clearRect(0, 0, width, height);
+            ctx.fillStyle = 'rgba(0, 8, 20, 0.72)';
+            ctx.fillRect(0, 0, width, height);
+
+            stars.forEach(star => {
+                star.x -= star.speed;
+                if (star.x < 0) star.x = width;
+                ctx.fillStyle = 'rgba(255,255,255,' + (0.5 + Math.random() * 0.5) + ')';
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function drawWaves(time) {
+            waves.forEach((wave, index) => {
+                ctx.strokeStyle = 'rgba(135,206,250,' + (0.16 + index * 0.05) + ')';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                for (let x = 0; x <= width; x += 14) {
+                    const y = height * 0.7 + Math.sin((x * 0.012) + wave.phase + time * wave.speed) * wave.amplitude + index * 14;
+                    if (x === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
             });
         }
 
         function drawShip() {
             ctx.save();
             ctx.translate(ship.x, ship.y);
-            ctx.fillStyle = colors.ship;
+            ctx.rotate(ship.velocity * 0.08);
+
+            ctx.fillStyle = ship.color;
             ctx.beginPath();
-            ctx.moveTo(-ship.radius, -ship.radius * 0.7);
-            ctx.lineTo(ship.radius, 0);
-            ctx.lineTo(-ship.radius, ship.radius * 0.7);
+            ctx.moveTo(25, 0);
+            ctx.lineTo(-18, -14);
+            ctx.lineTo(-10, 0);
+            ctx.lineTo(-18, 14);
             ctx.closePath();
             ctx.fill();
+
+            ctx.fillStyle = 'rgba(255,255,255,0.9)';
+            ctx.beginPath();
+            ctx.arc(-4, 0, 5, 0, Math.PI * 2);
+            ctx.fill();
+
             ctx.restore();
         }
 
-        function drawStars() {
-            for (let i = 0; i < 60; i++) {
-                const x = (i * 73 + frame * 0.6) % width;
-                const y = (i * 44 + (i % 3) * 20) % height;
-                const alpha = 0.4 + 0.6 * ((i % 5) / 4);
-                ctx.fillStyle = `rgba(123, 237, 255, ${alpha})`;
-                ctx.beginPath();
-                ctx.arc(x, y, 2, 0, Math.PI * 2);
-                ctx.fill();
+        function update() {
+            ship.y += ship.velocity;
+            if (!mouseDown && ship.velocity !== ship.speed) {
+                ship.velocity = ship.speed;
             }
+            if (ship.y < 20) ship.y = 20;
+            if (ship.y > height - 20) ship.y = height - 20;
         }
 
-        function drawObstacles() {
-            ctx.fillStyle = colors.obstacle;
-            obstacles.forEach(obs => {
-                ctx.fillRect(obs.x, 0, obs.width, obs.topHeight);
-                ctx.fillRect(obs.x, obs.bottomY, obs.width, height - obs.bottomY);
-                ctx.fillStyle = '#ffb3c6';
-                ctx.fillRect(obs.x + 8, obs.topHeight - 16, obs.width - 16, 12);
-                ctx.fillRect(obs.x + 8, obs.bottomY + 4, obs.width - 16, 12);
-                ctx.fillStyle = colors.obstacle;
-            });
-        }
-
-        function updateShip() {
-            if (mouseDown) {
-                ship.velocity += ship.lift;
-            } else {
-                ship.velocity += ship.gravity;
-            }
-            ship.velocity = Math.max(-ship.maxSpeed, Math.min(ship.velocity, ship.maxSpeed));
-            ship.y += ship.velocity * 2;
-            if (ship.y < ship.radius + 10) ship.y = ship.radius + 10;
-            if (ship.y > height - ship.radius - 10) ship.y = height - ship.radius - 10;
-        }
-
-        function updateObstacles() {
-            obstacles.forEach(obs => {
-                obs.x -= 4;
-                if (!obs.passed && obs.x + obs.width < ship.x) {
-                    obs.passed = true;
-                    score += 1;
-                    scoreEl.textContent = `Score: ${score}`;
-                }
-            });
-            obstacles = obstacles.filter(obs => obs.x + obs.width > -50);
-            if (frame % 110 === 0) createObstacle();
-        }
-
-        function detectCollision() {
-            for (const obs of obstacles) {
-                if (ship.x + ship.radius > obs.x && ship.x - ship.radius < obs.x + obs.width) {
-                    if (ship.y - ship.radius < obs.topHeight || ship.y + ship.radius > obs.bottomY) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-
-        function drawWave() {
-            ctx.strokeStyle = '#7de2ff';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            for (let x = 0; x <= width; x += 15) {
-                const y = height * 0.5 + Math.sin((x * 0.02) + frame * 0.03) * 40;
-                if (x === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-            }
-            ctx.stroke();
-        }
-
-        function gameLoop() {
-            ctx.fillStyle = colors.background;
-            ctx.fillRect(0, 0, width, height);
-            drawStars();
-            drawWave();
-            updateShip();
-            updateObstacles();
-            drawObstacles();
+        function loop(time) {
+            drawBackground();
+            drawWaves(time * 0.001);
+            update();
             drawShip();
-            frame += 1;
-
-            if (detectCollision()) {
-                gameOver = true;
-                msgEl.textContent = 'Game Over! Refresh to play again.';
-            }
-            if (!gameOver) requestAnimationFrame(gameLoop);
+            requestAnimationFrame(loop);
         }
 
-        gameLoop();
+        ship.velocity = ship.speed;
+        requestAnimationFrame(loop);
     </script>
 </body>
 </html>
+           
